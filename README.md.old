@@ -1,0 +1,136 @@
+# Architecture de production — Système de prédiction du churn CANAL+
+
+Implémentation complète du CDC §4.7 : Kafka → Spark → PostgreSQL → FastAPI/Dashboard.
+Le pipeline charge le modèle `churn_model_canalplus` (v1, MLflow Production) publié
+sur le dépôt privé Hugging Face `yavin228/churn-canalplus`, construit lors de
+l'architecture de développement.
+
+## Vue d'ensemble
+
+```
+┌───────────┐    ┌───────┐    ┌──────────────┐    ┌────────────┐    ┌─────────────────┐
+│ Producer  │───▶│ Kafka │───▶│ Spark        │───▶│ PostgreSQL │───▶│ FastAPI +        │
+│ (simulate)│    │(3 top)│    │ Streaming    │    │ churn_data │    │ Dashboard        │
+└───────────┘    └───────┘    │ + modèle HF  │    │ churn_model│    │ /predict /kpis   │
+                               └──────────────┘    └────────────┘    └─────────────────┘
+                                                          │
+                                                          ▼
+                                                    Power BI (Direct Query)
+```
+
+## Structure
+
+```
+architecture_production/
+├── docker-compose.yml              # assemble les 5 services
+├── .env.example                    # → cp en .env, à éditer
+├── 2_ingestion_kafka/
+│   ├── create_topics.sh
+│   ├── producer.py                 # simulateur d'évènements
+│   └── Dockerfile
+├── 3_traitement_spark/
+│   ├── streaming_job.py            # Spark Structured Streaming
+│   ├── churn_preprocessing.py      # identique au notebook dev
+│   ├── model_loader.py             # chargement résilient HF
+│   └── Dockerfile
+├── 4_stockage_postgresql/
+│   └── init.sql                    # schéma complet (churn_data, churn_model, 12 vues)
+└── 5_services_dashboard/api/
+    ├── main.py                     # FastAPI : /predict /scores /clients/risque /kpis
+    ├── auth.py                     # JWT + bcrypt
+    ├── db.py
+    ├── static/index.html           # dashboard 5 pages
+    └── Dockerfile
+```
+
+## Démarrage complet
+
+```bash
+# 1) Secrets
+cp .env.example .env
+nano .env   # POSTGRES_PASSWORD, HF_TOKEN, JWT_SECRET_KEY (openssl rand -hex 32)
+
+# 2) Dataset (hors Git, monté en volume readonly par le producer)
+mkdir -p data
+cp /chemin/vers/CanalPlus_Churn_1M.csv data/
+
+# 3) Infrastructure de base
+docker compose up -d kafka postgres
+docker compose ps                      # attendre "healthy" sur les deux
+
+# 4) Topics Kafka
+bash 2_ingestion_kafka/create_topics.sh
+
+# 5) Traitement + API (construits et démarrés)
+docker compose up -d --build spark api
+docker compose logs -f spark           # vérifier "Streaming démarré"
+
+# 6) Producer — lance le flux d'évènements
+docker compose --profile producer up -d producer
+docker compose logs -f producer spark  # vérifier les micro-batchs traités
+```
+
+## Vérifications
+
+```bash
+# Les tables se remplissent-elles ?
+docker exec -it churn_postgres psql -U churn_user -d churn_db \
+  -c "SELECT count(*) FROM churn_data; SELECT count(*) FROM churn_model;"
+
+# KPIs live (nécessite un token — voir ci-dessous)
+curl http://localhost:8000/health
+
+# Dashboard
+open http://localhost:8000/dashboard/     # ou http://<IP_VPS>:8000/dashboard/
+```
+
+## Créer un compte API et obtenir un token JWT
+
+Aucun compte n'existe par défaut (table `api_users` vide à l'initialisation).
+En créer un manuellement :
+
+```sql
+-- Hash bcrypt à générer au préalable :
+--   python3 -c "from passlib.context import CryptContext; \
+--   print(CryptContext(schemes=['bcrypt']).hash('MotDePasseFort123'))"
+INSERT INTO api_users (username, password_hash, role)
+VALUES ('jimmy.hunlede', '<hash_bcrypt_genere>', 'admin');
+```
+
+```bash
+curl -X POST http://localhost:8000/token \
+  -d "username=jimmy.hunlede&password=MotDePasseFort123"
+# -> {"access_token": "...", "token_type": "bearer"}
+
+curl http://localhost:8000/kpis -H "Authorization: Bearer <token>"
+```
+
+## Points de conception importants
+
+**Append-only partout.** `churn_data` et `churn_model` ne sont jamais mises à jour
+(`UPDATE`), seulement complétées. Le "dernier état" d'un client est reconstitué par
+les vues (`v_churn_data_dernier_etat`, `v_dernier_score`). Ceci absorbe le débit du
+streaming sans verrous ni conflits d'écriture.
+
+**Cohérence des noms de colonnes.** Kafka/PostgreSQL utilisent des noms snake_case
+(`monthly_charges`), tandis que le pipeline entraîné attend les noms originaux du
+CSV (`MonthlyCharges`). Le job Spark (`streaming_job.py`, `SNAKE_TO_TRAINING_NAMES`)
+et l'API (`main.py`) font ce renommage avant tout scoring — sans ça, le
+`ColumnTransformer` échouerait silencieusement (mauvais nombre de features).
+
+**Micro-batch à 10 secondes.** `TRIGGER_SECONDS=10` dans `.env` — ajustable selon
+la charge. Respecte l'objectif CDC §8.1 ("latence de quelques secondes").
+
+**Cache local de secours.** `model_loader.py` télécharge le pipeline depuis
+Hugging Face au démarrage de Spark et de l'API, et le recopie dans un volume
+partagé (`model_cache`). Si le Hub est indisponible au redémarrage, le cache
+local est utilisé (CDC §8.3).
+
+## Ce qui reste à faire
+
+- **Power BI** : connexion Direct Query sur `churn_data`, `churn_model` et les
+  12 vues (host = IP du VPS, port 5432, base `churn_db`).
+- **VPS** : restreindre les ports exposés (5432, 29092) par pare-feu aux IP
+  autorisées ; garder 8000 ouvert pour le dashboard si besoin d'accès public.
+- **Comptes API** : créer les comptes `api_users` pour les équipes Marketing/
+  Commerciales (rôle `lecteur`) et DevOps (rôle `admin`).

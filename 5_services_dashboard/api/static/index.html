@@ -1,0 +1,978 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pilotage Churn — CANAL+ · Dashboard V2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root{
+    --noir:#08080A; --panneau:#111114; --panneau2:#17171B; --panneau3:#1D1D22;
+    --bord:#25252C; --bord2:#33333B;
+    --or:#F2C14E; --or-sombre:#B8892E; --or-lueur:rgba(242,193,78,.18);
+    --rouge:#F0553B; --rouge-lueur:rgba(240,85,59,.16);
+    --vert:#4FB286; --vert-lueur:rgba(79,178,134,.14);
+    --bleu:#5B9BD5;
+    --texte:#F0F0F2; --texte2:#B8B8BE; --sourd:#7A7A82;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    background:var(--noir);color:var(--texte);font-family:'Inter',sans-serif;font-size:14px;
+    /* Motif subtil : grille fine + halo doré discret en haut */
+    background-image:
+      radial-gradient(1200px 500px at 15% -10%, rgba(242,193,78,.06), transparent 60%),
+      radial-gradient(900px 400px at 85% -5%, rgba(240,85,59,.04), transparent 60%),
+      linear-gradient(rgba(255,255,255,.012) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,.012) 1px, transparent 1px);
+    background-size: auto, auto, 32px 32px, 32px 32px;
+    min-height:100vh;
+  }
+  .num{font-variant-numeric:tabular-nums;font-feature-settings:'tnum'}
+  .mono{font-family:'JetBrains Mono',monospace;font-size:.9em}
+
+  /* ===================== Ticker temps réel ===================== */
+  .ticker{background:#000;border-bottom:1px solid var(--bord);overflow:hidden;white-space:nowrap;height:34px;display:flex;align-items:center;position:relative}
+  .ticker::after{content:'';position:absolute;right:0;top:0;bottom:0;width:80px;background:linear-gradient(90deg,transparent,#000);pointer-events:none}
+  .ticker .label{background:var(--or);color:#000;font-family:'Barlow Condensed';font-weight:700;font-size:12.5px;letter-spacing:.1em;text-transform:uppercase;padding:0 16px;height:100%;display:flex;align-items:center;gap:8px;flex-shrink:0;z-index:2;box-shadow:2px 0 12px rgba(242,193,78,.25)}
+  .label .live{width:8px;height:8px;background:#000;border-radius:50%;animation:pulse 1.4s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:.4;transform:scale(.85)}50%{opacity:1;transform:scale(1.1)}}
+  .ticker .flux{display:inline-block;padding-left:100%;animation:defile 50s linear infinite;color:var(--texte2);font-size:12.5px}
+  .ticker .flux b{color:var(--texte);font-weight:600}
+  .ticker .flux .alerte{color:var(--rouge);font-weight:600}
+  .ticker .flux span{margin-right:48px}
+  @keyframes defile{to{transform:translateX(-100%)}}
+  @media (prefers-reduced-motion: reduce){.ticker .flux{animation:none;padding-left:16px}.label .live{animation:none}}
+
+  /* ===================== En-tête ===================== */
+  header{padding:22px 36px 0;border-bottom:1px solid var(--bord);background:linear-gradient(180deg,rgba(17,17,20,.6),transparent)}
+  .haut{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:14px}
+  .marque{display:flex;align-items:center;gap:20px}
+  .logo{background:#fff;color:#000;font-family:'Barlow Condensed';font-weight:800;font-size:24px;padding:6px 14px;letter-spacing:-.01em;box-shadow:0 4px 20px rgba(255,255,255,.08)}
+  .titre-bloc h1{font-family:'Barlow Condensed';font-weight:700;font-size:28px;letter-spacing:.05em;text-transform:uppercase;line-height:1}
+  .titre-bloc h1 em{color:var(--or);font-style:normal;font-weight:700}
+  .titre-bloc .sur{color:var(--sourd);font-size:11.5px;text-transform:uppercase;letter-spacing:.14em;margin-top:5px}
+
+  .statut{display:flex;align-items:center;gap:22px;color:var(--texte2);font-size:12px}
+  .pastille{display:inline-flex;align-items:center;gap:8px;padding:6px 12px;background:rgba(79,178,134,.08);border:1px solid rgba(79,178,134,.3)}
+  .pastille::before{content:'';width:8px;height:8px;border-radius:50%;background:var(--vert);box-shadow:0 0 10px var(--vert);animation:pulse-vert 2s ease-in-out infinite}
+  @keyframes pulse-vert{50%{opacity:.6}}
+  .badge-modele{padding:6px 12px;background:var(--panneau3);border:1px solid var(--bord2);font-size:11.5px}
+  .badge-modele b{color:var(--or)}
+
+  /* ===================== Filtres globaux ===================== */
+  .filtres{display:flex;align-items:center;gap:18px;padding:14px 0;flex-wrap:wrap}
+  .filtres .label-groupe{font-family:'Barlow Condensed';font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--or);font-weight:600;margin-right:4px}
+  .filtre{display:flex;align-items:center;gap:8px}
+  .filtre label{font-size:11px;color:var(--sourd);text-transform:uppercase;letter-spacing:.06em}
+  .filtre select{background:var(--panneau2);border:1px solid var(--bord2);color:var(--texte);padding:7px 30px 7px 12px;font-family:'Inter';font-size:12.5px;cursor:pointer;
+    appearance:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' stroke='%23F2C14E' stroke-width='1.5' fill='none'/></svg>");
+    background-repeat:no-repeat;background-position:right 10px center;transition:border-color .15s}
+  .filtre select:hover{border-color:var(--or)}
+  .filtre select:focus{outline:2px solid var(--or);outline-offset:-1px}
+  .filtre-reset{margin-left:auto;background:none;border:1px solid var(--bord2);color:var(--sourd);padding:7px 14px;font-family:'Barlow Condensed';font-size:12px;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;transition:all .15s}
+  .filtre-reset:hover{color:var(--or);border-color:var(--or)}
+  .indic-filtre{padding:5px 12px;background:var(--or-lueur);border:1px solid var(--or);color:var(--or);font-family:'Barlow Condensed';font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;font-weight:600;display:none}
+  .indic-filtre.actif{display:inline-block}
+
+  /* ===================== Navigation ===================== */
+  nav{display:flex;gap:2px;flex-wrap:wrap;padding-top:6px}
+  nav .groupe{font-family:'Barlow Condensed';font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--sourd);align-self:center;margin:0 14px 0 4px;font-weight:600}
+  nav .groupe.predictif{color:var(--rouge)}
+  nav button{background:none;border:none;border-bottom:3px solid transparent;color:var(--texte2);font-family:'Barlow Condensed';font-weight:600;font-size:16px;letter-spacing:.06em;text-transform:uppercase;padding:12px 20px;cursor:pointer;position:relative;transition:color .15s}
+  nav button:hover{color:var(--texte)}
+  nav button.actif{color:var(--or);border-bottom-color:var(--or)}
+  nav button.actif.predictif{color:var(--rouge);border-bottom-color:var(--rouge)}
+  nav button:focus-visible{outline:2px solid var(--or);outline-offset:-2px}
+  nav button .num-onglet{opacity:.5;margin-right:6px;font-size:13px}
+  nav button.actif .num-onglet{opacity:1}
+
+  /* ===================== Contenu ===================== */
+  main{padding:32px 36px;max-width:1500px;margin:0 auto}
+  .page{display:none}
+  .page.visible{display:block;animation:entrer .5s cubic-bezier(.2,.6,.2,1)}
+  @keyframes entrer{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+  @media (prefers-reduced-motion: reduce){.page.visible{animation:none}}
+  .sous-titre{font-family:'Barlow Condensed';font-weight:700;font-size:17px;letter-spacing:.1em;text-transform:uppercase;color:var(--texte2);margin:0 0 22px;display:flex;align-items:baseline;gap:14px}
+  .sous-titre::before{content:'';width:32px;height:2px;background:var(--or)}
+  .sous-titre b{color:var(--or);font-weight:700}
+  .page-predictive .sous-titre::before{background:var(--rouge)}
+  .page-predictive .sous-titre b{color:var(--rouge)}
+
+  /* ===================== KPI premium ===================== */
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px}
+  .kpi{background:var(--panneau);border:1px solid var(--bord);padding:20px 22px;position:relative;overflow:hidden;transition:transform .2s,border-color .2s}
+  .kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--or)}
+  .kpi.risque::before{background:var(--rouge)}
+  .kpi.sain::before{background:var(--vert)}
+  .kpi.info::before{background:var(--bleu)}
+  .kpi::after{content:'';position:absolute;top:-30%;right:-20%;width:200px;height:200px;background:radial-gradient(circle, var(--or-lueur), transparent 70%);pointer-events:none;opacity:.5}
+  .kpi.risque::after{background:radial-gradient(circle, var(--rouge-lueur), transparent 70%)}
+  .kpi.sain::after{background:radial-gradient(circle, var(--vert-lueur), transparent 70%)}
+  .kpi:hover{transform:translateY(-2px);border-color:var(--bord2)}
+  .kpi .libelle{font-size:11px;color:var(--sourd);text-transform:uppercase;letter-spacing:.1em;margin-bottom:12px;font-weight:600}
+  .kpi .valeur{font-family:'Barlow Condensed';font-weight:700;font-size:46px;line-height:1;position:relative;z-index:1}
+  .kpi .valeur small{font-size:22px;color:var(--texte2);font-weight:500;margin-left:2px}
+  .kpi .delta{margin-top:10px;font-size:12px;display:flex;align-items:center;gap:6px}
+  .delta.hausse{color:var(--rouge)} .delta.baisse{color:var(--vert)} .delta.stable{color:var(--sourd)}
+  .delta-fleche{font-size:10px}
+
+  /* ===================== Cartes graphique ===================== */
+  .l-2-1{display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-bottom:16px}
+  .l-1-2{display:grid;grid-template-columns:1fr 2fr;gap:16px;margin-bottom:16px}
+  .l-1-1{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+  .l-1-1-1{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:16px}
+  .carte{background:var(--panneau);border:1px solid var(--bord);padding:22px 24px;position:relative;transition:border-color .2s}
+  .carte:hover{border-color:var(--bord2)}
+  .carte h3{font-family:'Barlow Condensed';font-weight:700;font-size:15px;letter-spacing:.08em;text-transform:uppercase;margin-bottom:16px;color:var(--texte);display:flex;align-items:center;justify-content:space-between}
+  .carte h3 small{color:var(--sourd);font-family:'Inter';font-size:11px;letter-spacing:.02em;text-transform:none;font-weight:400}
+  .zone-graph{position:relative;height:250px}
+  .zone-graph.basse{height:210px}
+  .zone-graph.haute{height:300px}
+
+  /* ===================== Tableaux ===================== */
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{font-family:'Barlow Condensed';font-weight:600;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--sourd);text-align:left;padding:9px 12px;border-bottom:1px solid var(--bord2)}
+  td{padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.03)}
+  tr{transition:background .1s}
+  tr:hover td{background:var(--panneau2)}
+  .badge{display:inline-block;padding:3px 10px;font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+  .badge.eleve{background:var(--rouge-lueur);color:var(--rouge);border:1px solid rgba(240,85,59,.4)}
+  .badge.moyen{background:var(--or-lueur);color:var(--or);border:1px solid rgba(242,193,78,.4)}
+  .badge.faible{background:var(--vert-lueur);color:var(--vert);border:1px solid rgba(79,178,134,.4)}
+  .barre-score{height:6px;background:var(--panneau3);width:100px;display:inline-block;vertical-align:middle;margin-right:10px;overflow:hidden}
+  .barre-score i{display:block;height:100%;background:linear-gradient(90deg,var(--or),var(--rouge));animation:remplir .6s ease-out}
+  @keyframes remplir{from{width:0!important}}
+  .action{color:var(--texte2);font-size:12px}
+
+  /* ===================== Prescriptif · Actions ===================== */
+  .actions{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:16px}
+  .carte-action{background:var(--panneau);border:1px solid var(--bord);border-left:4px solid var(--or);padding:20px 22px;position:relative;overflow:hidden}
+  .carte-action.urgent{border-left-color:var(--rouge)}
+  .carte-action.opportunite{border-left-color:var(--vert)}
+  .carte-action .rang{position:absolute;top:12px;right:16px;font-family:'Barlow Condensed';font-weight:800;font-size:44px;color:var(--panneau3);line-height:1}
+  .carte-action .cible{font-family:'Barlow Condensed';font-weight:700;font-size:17px;letter-spacing:.05em;text-transform:uppercase;margin-bottom:8px}
+  .carte-action .segment{font-size:11.5px;color:var(--sourd);margin-bottom:12px;text-transform:uppercase;letter-spacing:.04em}
+  .carte-action .segment b{color:var(--texte2);font-weight:600}
+  .carte-action .mesure{font-size:13px;line-height:1.6;margin-bottom:14px;color:var(--texte2)}
+  .carte-action .impact{padding-top:12px;border-top:1px solid var(--bord);font-size:11.5px;color:var(--sourd);text-transform:uppercase;letter-spacing:.06em;display:flex;justify-content:space-between;align-items:baseline}
+  .carte-action .impact b{font-family:'Barlow Condensed';font-size:22px;font-weight:800;color:var(--or)}
+  .carte-action.urgent .impact b{color:var(--rouge)}
+  .carte-action.opportunite .impact b{color:var(--vert)}
+
+  /* ===================== Simulateur ===================== */
+  .simulateur{display:grid;grid-template-columns:1fr 380px;gap:16px}
+  .formulaire{display:grid;grid-template-columns:repeat(3,1fr);gap:14px 18px}
+  .champ label{display:block;font-size:10.5px;color:var(--sourd);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;font-weight:600}
+  .champ select,.champ input{width:100%;background:var(--panneau2);border:1px solid var(--bord2);color:var(--texte);padding:9px 12px;font-family:'Inter';font-size:13px;transition:border-color .15s}
+  .champ select:hover,.champ input:hover{border-color:var(--bord2)}
+  .champ select:focus,.champ input:focus{outline:2px solid var(--or);outline-offset:-1px;border-color:var(--or)}
+  .bouton{grid-column:1 / -1;background:var(--or);color:#000;border:none;font-family:'Barlow Condensed';font-weight:800;font-size:16px;letter-spacing:.12em;text-transform:uppercase;padding:14px;cursor:pointer;margin-top:4px;transition:all .15s;box-shadow:0 4px 20px rgba(242,193,78,.15)}
+  .bouton:hover{background:#FFD670;box-shadow:0 6px 24px rgba(242,193,78,.3);transform:translateY(-1px)}
+  .bouton:focus-visible{outline:3px solid #fff;outline-offset:2px}
+  .resultat{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;background:linear-gradient(180deg,var(--panneau),var(--panneau2))}
+  .jauge{position:relative;width:230px;height:124px;margin-bottom:6px}
+  .jauge svg{width:100%;height:100%}
+  .jauge .score-txt{position:absolute;bottom:0;left:0;right:0;font-family:'Barlow Condensed';font-weight:800;font-size:48px;line-height:1}
+  .verdict{font-family:'Barlow Condensed';font-weight:700;font-size:17px;letter-spacing:.1em;text-transform:uppercase;margin-top:8px;padding:6px 14px}
+  .verdict.eleve{color:var(--rouge);background:var(--rouge-lueur)}
+  .verdict.moyen{color:var(--or);background:var(--or-lueur)}
+  .verdict.faible{color:var(--vert);background:var(--vert-lueur)}
+  .reco{margin-top:14px;padding:13px 16px;background:var(--panneau3);border-left:3px solid var(--or);font-size:12.5px;color:var(--texte2);text-align:left;max-width:340px;line-height:1.55}
+  .reco b{color:var(--texte);font-weight:600}
+
+  /* ===================== Modèle · Métriques ===================== */
+  .metriques-modele{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+  .metrique{background:var(--panneau2);border:1px solid var(--bord);padding:14px 16px;text-align:center;transition:transform .15s}
+  .metrique:hover{transform:translateY(-2px)}
+  .metrique .v{font-family:'Barlow Condensed';font-weight:800;font-size:30px;color:var(--or);line-height:1}
+  .metrique .l{font-size:10px;color:var(--sourd);text-transform:uppercase;letter-spacing:.08em;margin-top:6px;font-weight:600}
+  .matrice{display:grid;grid-template-columns:auto 1fr 1fr;gap:6px;font-size:12px;align-items:stretch;margin-top:10px}
+  .matrice .coin{display:flex;align-items:end;color:var(--sourd);font-size:10px;padding:4px;text-transform:uppercase;letter-spacing:.06em}
+  .matrice .etiq{display:flex;align-items:center;justify-content:center;color:var(--sourd);font-family:'Barlow Condensed';font-size:12px;text-transform:uppercase;letter-spacing:.08em;padding:8px;font-weight:600}
+  .matrice .case{padding:16px 8px;text-align:center;border:1px solid var(--bord2);transition:transform .15s}
+  .matrice .case:hover{transform:scale(1.02)}
+  .matrice .case .n{font-family:'Barlow Condensed';font-weight:800;font-size:24px}
+  .matrice .case .t{font-size:9.5px;color:var(--sourd);text-transform:uppercase;letter-spacing:.06em;margin-top:4px;font-weight:600}
+  .case.vp{background:var(--vert-lueur);border-color:rgba(79,178,134,.35)}
+  .case.vn{background:rgba(79,178,134,.06)}
+  .case.fp{background:rgba(242,193,78,.08)}
+  .case.fn{background:var(--rouge-lueur);border-color:rgba(240,85,59,.35)}
+
+  /* ===================== Projection 30 jours (page 5) ===================== */
+  .projection-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:12px}
+  .horizon-select{display:flex;gap:2px;background:var(--panneau2);border:1px solid var(--bord2);padding:3px}
+  .horizon-select button{background:none;border:none;color:var(--sourd);padding:6px 14px;font-family:'Barlow Condensed';font-weight:600;font-size:12.5px;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;transition:all .15s}
+  .horizon-select button:hover{color:var(--texte)}
+  .horizon-select button.actif{background:var(--rouge);color:#fff}
+  .projection-metriques{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:16px}
+  .proj-m{background:var(--panneau2);border:1px solid var(--bord);padding:14px 16px}
+  .proj-m .l{font-size:10.5px;color:var(--sourd);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;font-weight:600}
+  .proj-m .v{font-family:'Barlow Condensed';font-weight:700;font-size:26px;line-height:1}
+  .proj-m .v.rouge{color:var(--rouge)}
+  .proj-m .v.or{color:var(--or)}
+  .proj-m .v.vert{color:var(--vert)}
+  .proj-m .s{font-size:11px;color:var(--sourd);margin-top:4px}
+
+  footer{border-top:1px solid var(--bord);padding:20px 36px;display:flex;justify-content:space-between;color:var(--sourd);font-size:11.5px;flex-wrap:wrap;gap:8px;margin-top:24px}
+  footer b{color:var(--texte2);font-weight:500}
+
+  @media(max-width:1100px){
+    .kpis,.actions,.metriques-modele,.projection-metriques{grid-template-columns:repeat(2,1fr)}
+    .l-2-1,.l-1-2,.l-1-1,.l-1-1-1,.simulateur{grid-template-columns:1fr}
+    .formulaire{grid-template-columns:repeat(2,1fr)}
+    .haut{align-items:flex-start;flex-direction:column}
+    header{padding:16px 20px 0}
+    main{padding:22px 20px}
+  }
+</style>
+</head>
+<body>
+
+<!-- =============== Modale de login (connexion à l'API) =============== -->
+<div id="loginOverlay" style="position:fixed;inset:0;background:rgba(8,8,10,.92);backdrop-filter:blur(6px);z-index:9999;display:flex;align-items:center;justify-content:center">
+  <div style="background:linear-gradient(180deg,#17171B,#111114);border:1px solid #33333B;border-radius:12px;padding:36px 42px;width:min(420px,90vw);box-shadow:0 20px 60px rgba(0,0,0,.5),0 0 40px rgba(242,193,78,.08)">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px">
+      <div style="width:42px;height:42px;background:#F2C14E;color:#000;font-family:'Barlow Condensed';font-weight:800;font-size:19px;border-radius:6px;display:flex;align-items:center;justify-content:center">C+</div>
+      <div>
+        <div style="font-family:'Barlow Condensed';font-weight:700;font-size:20px;letter-spacing:.03em">PILOTAGE DU CHURN</div>
+        <div style="color:#7A7A82;font-size:11.5px;letter-spacing:.08em;text-transform:uppercase">Connexion sécurisée</div>
+      </div>
+    </div>
+    <div style="height:1px;background:linear-gradient(90deg,transparent,#33333B,transparent);margin:20px 0"></div>
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div>
+        <label style="display:block;font-size:11.5px;color:#B8B8BE;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Utilisateur</label>
+        <input id="loginUser" type="text" value="nick" autocomplete="username" style="width:100%;padding:11px 14px;background:#1D1D22;border:1px solid #33333B;border-radius:6px;color:#F0F0F2;font-family:inherit;font-size:14px;outline:none;transition:border-color .2s" onfocus="this.style.borderColor='#F2C14E'" onblur="this.style.borderColor='#33333B'">
+      </div>
+      <div>
+        <label style="display:block;font-size:11.5px;color:#B8B8BE;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Mot de passe</label>
+        <input id="loginPass" type="password" placeholder="•••••••••" autocomplete="current-password" style="width:100%;padding:11px 14px;background:#1D1D22;border:1px solid #33333B;border-radius:6px;color:#F0F0F2;font-family:inherit;font-size:14px;outline:none;transition:border-color .2s" onfocus="this.style.borderColor='#F2C14E'" onblur="this.style.borderColor='#33333B'" onkeydown="if(event.key==='Enter')doLogin()">
+      </div>
+      <div id="loginErr" style="color:#F0553B;font-size:12.5px;min-height:16px"></div>
+      <button onclick="doLogin()" style="padding:12px;background:#F2C14E;color:#000;border:none;border-radius:6px;font-family:'Barlow Condensed';font-weight:700;font-size:15px;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;transition:filter .15s" onmouseover="this.style.filter='brightness(1.1)'" onmouseout="this.style.filter='brightness(1)'">Se connecter</button>
+      <div style="text-align:center;color:#7A7A82;font-size:11px;letter-spacing:.05em">API : <span id="apiUrl" class="mono">http://127.0.0.1:8000</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="ticker" aria-label="Flux d'évènements temps réel">
+  <div class="label"><span class="live"></span>Flux temps réel</div>
+  <div class="flux">
+    <span><span class="mono">16:42:07</span> · <b>paiement</b> · client 5090…6586 · scoré <span class="alerte">0.731 ⚠</span></span>
+    <span><span class="mono">16:42:05</span> · <b>usage</b> · client 2337…5537 · scoré <span class="alerte">0.605 ⚠</span></span>
+    <span><span class="mono">16:42:04</span> · <b>abonnement</b> · client 4186…7104 · scoré 0.402</span>
+    <span><span class="mono">16:42:01</span> · <b>paiement</b> · client 9998…0978 · scoré <span class="alerte">0.634 ⚠</span></span>
+    <span><span class="mono">16:41:58</span> · <b>usage</b> · client 6454…5363 · scoré 0.324</span>
+    <span><span class="mono">16:41:55</span> · <b>abonnement</b> · client 7240…3456 · scoré 0.288</span>
+  </div>
+</div>
+
+<header>
+  <div class="haut">
+    <div class="marque">
+      <div class="logo">CANAL+</div>
+      <div class="titre-bloc">
+        <h1>Pilotage du churn <em>· temps réel</em></h1>
+        <div class="sur">Système prédictif · CANAL+ Group Togo · Modèle v1 en production</div>
+      </div>
+    </div>
+    <div class="statut">
+      <span class="pastille">Pipeline actif</span>
+      <span class="badge-modele">Modèle : <b>Régression Logistique v1</b> · seuil 0,50</span>
+      <span class="mono">MAJ : il y a 3 s</span>
+    </div>
+  </div>
+
+  <!-- ================== FILTRES GLOBAUX ================== -->
+  <div class="filtres" role="region" aria-label="Filtres globaux du dashboard">
+    <span class="label-groupe">Filtres</span>
+    <div class="filtre"><label for="f-periode">Période</label>
+      <select id="f-periode" onchange="appliquerFiltres()">
+        <option value="24h">24 dernières heures</option>
+        <option value="7j">7 derniers jours</option>
+        <option value="30j" selected>30 derniers jours</option>
+        <option value="90j">90 derniers jours</option>
+      </select></div>
+    <div class="filtre"><label for="f-contrat">Contrat</label>
+      <select id="f-contrat" onchange="appliquerFiltres()">
+        <option value="tous">Tous les contrats</option>
+        <option value="mensuel">Month-to-month</option>
+        <option value="1an">One year</option>
+        <option value="2ans">Two year</option>
+      </select></div>
+    <div class="filtre"><label for="f-segment">Segment</label>
+      <select id="f-segment" onchange="appliquerFiltres()">
+        <option value="tous">Toute la base</option>
+        <option value="nouveau">Nouveaux (&lt; 6 mois)</option>
+        <option value="fibre">Fibre optique</option>
+        <option value="premium">Premium (charges &gt; 80 €)</option>
+      </select></div>
+    <div class="filtre"><label for="f-risque">Niveau de risque</label>
+      <select id="f-risque" onchange="appliquerFiltres()">
+        <option value="tous">Tous les niveaux</option>
+        <option value="eleve">Élevé (≥ 0,70)</option>
+        <option value="moyen">Moyen (0,50–0,69)</option>
+        <option value="faible">Faible (&lt; 0,50)</option>
+      </select></div>
+    <span class="indic-filtre" id="indic-filtres">Filtres actifs</span>
+    <button class="filtre-reset" onclick="resetFiltres()">Réinitialiser</button>
+  </div>
+
+  <nav>
+    <span class="groupe">Analyse</span>
+    <button class="onglet actif" data-page="p1"><span class="num-onglet">01</span>Vue d'ensemble</button>
+    <button class="onglet" data-page="p2"><span class="num-onglet">02</span>Segments clients</button>
+    <button class="onglet" data-page="p3"><span class="num-onglet">03</span>Prescriptif · Actions</button>
+    <span class="groupe predictif">Prédiction</span>
+    <button class="onglet predictif" data-page="p4"><span class="num-onglet">04</span>Temps réel</button>
+    <button class="onglet predictif" data-page="p5"><span class="num-onglet">05</span>Simulateur & Projection</button>
+  </nav>
+</header>
+
+<main>
+
+<!-- ============ PAGE 1 ============ -->
+<div class="page visible" id="p1">
+  <div class="sous-titre">Analyse descriptive <b>· état de la base clients</b></div>
+  <div class="kpis">
+    <div class="kpi info"><div class="libelle">Clients en base</div><div class="valeur num" id="clientsEnBase" data-base="1000000">1 000 000</div><div class="delta stable">Périmètre : dataset de référence</div></div>
+    <div class="kpi risque"><div class="libelle">Taux de churn observé</div><div class="valeur num" id="tauxChurnObs" data-base="26.6">26,6<small> %</small></div><div class="delta hausse num" id="nbResiliations"><span class="delta-fleche">▲</span> 266 090 résiliations</div></div>
+    <div class="kpi"><div class="libelle">Revenu mensuel (base)</div><div class="valeur num" id="mrrTotal" data-base="69.1">69,1<small> M€</small></div><div class="delta stable num" id="mrrMoyen">Charge moyenne : 69,08 € / client</div></div>
+    <div class="kpi sain"><div class="libelle">Ancienneté moyenne</div><div class="valeur num" id="ancMoy" data-base="35.6">35,6<small> mois</small></div><div class="delta stable num" id="ancMed">Médiane : 36 mois</div></div>
+  </div>
+  <div class="l-2-1">
+    <div class="carte"><h3>Churn observé par type de contrat <small>facteur structurel n°1</small></h3><div class="zone-graph"><canvas id="g1_contrat"></canvas></div></div>
+    <div class="carte"><h3>Répartition des contrats <small>base entière</small></h3><div class="zone-graph"><canvas id="g1_repcontrat"></canvas></div></div>
+  </div>
+  <div class="l-1-1">
+    <div class="carte"><h3>Churn par tranche d'ancienneté <small>les 6 premiers mois sont critiques</small></h3><div class="zone-graph basse"><canvas id="g1_tenure"></canvas></div></div>
+    <div class="carte"><h3>Churn par service internet <small>la fibre churn davantage</small></h3><div class="zone-graph basse"><canvas id="g1_internet"></canvas></div></div>
+  </div>
+</div>
+
+<!-- ============ PAGE 2 ============ -->
+<div class="page" id="p2">
+  <div class="sous-titre">Analyse descriptive <b>· segments & comportements</b></div>
+  <div class="kpis">
+    <div class="kpi info"><div class="libelle">Clients nouveaux (&lt; 6 mois)</div><div class="valeur num">8,4<small> %</small></div><div class="delta hausse num"><span class="delta-fleche">▲</span> Churn : 37,0 % sur ce segment</div></div>
+    <div class="kpi"><div class="libelle">Services souscrits (moyenne)</div><div class="valeur num">2,4<small> / 6</small></div><div class="delta stable">Sécurité & support = protecteurs</div></div>
+    <div class="kpi risque"><div class="libelle">Paiement « electronic check »</div><div class="valeur num">25,1<small> %</small></div><div class="delta hausse num"><span class="delta-fleche">▲</span> Churn : 31,2 % vs 24,8 %</div></div>
+    <div class="kpi sain"><div class="libelle">Clients multi-services (≥ 4)</div><div class="valeur num">18,7<small> %</small></div><div class="delta baisse num"><span class="delta-fleche">▼</span> Churn : 19,3 % — plus fidèles</div></div>
+  </div>
+  <div class="l-1-1">
+    <div class="carte"><h3>Churn selon les services souscrits <small>effet protecteur des options</small></h3><div class="zone-graph"><canvas id="g2_services"></canvas></div></div>
+    <div class="carte"><h3>Churn par mode de paiement</h3><div class="zone-graph"><canvas id="g2_paiement"></canvas></div></div>
+  </div>
+  <div class="l-2-1">
+    <div class="carte"><h3>Distribution des charges mensuelles <small>fidèles vs résiliés</small></h3><div class="zone-graph basse"><canvas id="g2_charges"></canvas></div></div>
+    <div class="carte"><h3>Profil démographique <small>taux de churn</small></h3><div class="zone-graph basse"><canvas id="g2_demo"></canvas></div></div>
+  </div>
+</div>
+
+<!-- ============ PAGE 3 ============ -->
+<div class="page" id="p3">
+  <div class="sous-titre">Analyse prescriptive <b>· quoi faire, pour qui, avec quel impact</b></div>
+  <div class="kpis">
+    <div class="kpi risque"><div class="libelle">Revenu mensuel à risque</div><div class="valeur num">4,12<small> M€</small></div><div class="delta hausse">MRR des clients à risque (score ≥ 0,50)</div></div>
+    <div class="kpi"><div class="libelle">Clients ciblables</div><div class="valeur num">53 636</div><div class="delta stable">Risque moyen + élevé, contactables</div></div>
+    <div class="kpi sain"><div class="libelle">Revenu sauvegardable</div><div class="valeur num">1,05<small> M€/mois</small></div><div class="delta baisse num"><span class="delta-fleche">▼</span> Hypothèse : 40 % de rétention</div></div>
+    <div class="kpi info"><div class="libelle">Coût rétention / acquisition</div><div class="valeur num">1 : 5<small> à 25</small></div><div class="delta stable">Retenir coûte 5 à 25× moins cher</div></div>
+  </div>
+  <div class="actions">
+    <div class="carte-action urgent">
+      <div class="rang">01</div>
+      <div class="cible">Appel rétention</div>
+      <div class="segment">Score ≥ 0,70 · <b>contrat mensuel</b> · ancienneté &lt; 6 mois — 9 812 clients</div>
+      <div class="mesure">Appel sortant sous 48 h + offre d'engagement 12 mois avec remise de 15 % pendant 3 mois. Le passage en contrat annuel divise par deux le risque structurel (32,6 % → 16,5 %).</div>
+      <div class="impact"><span>Revenu protégé</span><b class="num">812 k€/mois</b></div>
+    </div>
+    <div class="carte-action">
+      <div class="rang">02</div>
+      <div class="cible">Services protecteurs</div>
+      <div class="segment">Score 0,50–0,69 · <b>sans support ni sécurité</b> — 21 480 clients</div>
+      <div class="mesure">Offrir 3 mois de support technique ou de sécurité en ligne. Les clients équipés churnent nettement moins : chaque service souscrit réduit le risque (effet d'ancrage).</div>
+      <div class="impact"><span>Revenu protégé</span><b class="num">640 k€/mois</b></div>
+    </div>
+    <div class="carte-action opportunite">
+      <div class="rang">03</div>
+      <div class="cible">Paiement automatique</div>
+      <div class="segment">Risque moyen · <b>electronic check</b> — 13 900 clients</div>
+      <div class="mesure">Inciter à la migration vers le prélèvement automatique (remise ponctuelle). Le mode de paiement manuel est un marqueur fort de désengagement dans le modèle.</div>
+      <div class="impact"><span>Revenu protégé</span><b class="num">385 k€/mois</b></div>
+    </div>
+  </div>
+  <div class="l-1-2">
+    <div class="carte"><h3>Facteurs de churn <small>lecture prescriptive</small></h3><div class="zone-graph"><canvas id="g3_facteurs"></canvas></div></div>
+    <div class="carte"><h3>Matrice de ciblage <small>risque × valeur client</small></h3><div class="zone-graph"><canvas id="g3_matrice"></canvas></div></div>
+  </div>
+</div>
+
+<!-- ============ PAGE 4 ============ -->
+<div class="page page-predictive" id="p4">
+  <div class="sous-titre">Analyse prédictive <b>· scoring en temps réel</b></div>
+  <div class="kpis">
+    <div class="kpi risque"><div class="libelle">Taux de churn prédit</div><div class="valeur num">26,8<small> %</small></div><div class="delta hausse num"><span class="delta-fleche">▲</span> +0,4 pt vs. veille</div></div>
+    <div class="kpi risque"><div class="libelle">Risque élevé (≥ 0,70)</div><div class="valeur num">18 034</div><div class="delta hausse num"><span class="delta-fleche">▲</span> 512 nouveaux aujourd'hui</div></div>
+    <div class="kpi"><div class="libelle">Évènements scorés · 24 h</div><div class="valeur num">200 148</div><div class="delta stable num">Latence Kafka → PG : 2,1 s</div></div>
+    <div class="kpi sain"><div class="libelle">Clients actifs (faible risque)</div><div class="valeur num">146 512</div><div class="delta stable num">73,2 % de la base scorée</div></div>
+  </div>
+  <div class="l-2-1">
+    <div class="carte"><h3>Évolution horaire <small>volume scoré & score moyen prédit</small></h3><div class="zone-graph"><canvas id="g4_evolution"></canvas></div></div>
+    <div class="carte"><h3>Répartition prédite des risques</h3><div class="zone-graph"><canvas id="g4_risques"></canvas></div></div>
+  </div>
+  <div class="carte">
+    <h3>Top clients à risque <small>scores live · endpoint /clients/risque</small></h3>
+    <table>
+      <thead><tr><th>Client</th><th>Score prédit</th><th>Niveau</th><th>Contrat</th><th>Ancienneté</th><th>MRR</th><th>Action recommandée</th></tr></thead>
+      <tbody id="tableRisque"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ============ PAGE 5 ============ -->
+<div class="page page-predictive" id="p5">
+  <div class="sous-titre">Analyse prédictive <b>· simulation individuelle & projection</b></div>
+
+  <div class="kpis">
+    <div class="kpi risque"><div class="libelle">Recall (churners détectés)</div><div class="valeur num">63,9<small> %</small></div><div class="delta stable num">33 964 / 53 192 sur test</div></div>
+    <div class="kpi"><div class="libelle">Pouvoir discriminant (AUC)</div><div class="valeur num">0,660</div><div class="delta stable">Identique MLflow / Hugging Face</div></div>
+    <div class="kpi info"><div class="libelle">Revenu à risque détecté</div><div class="valeur num">2,63<small> M€/mois</small></div><div class="delta stable num">MRR des churners bien prédits</div></div>
+    <div class="kpi sain"><div class="libelle">Stabilité train / test</div><div class="valeur num">0,002</div><div class="delta baseline">Aucun surapprentissage</div></div>
+  </div>
+
+  <div class="simulateur" style="margin-bottom:16px">
+    <div class="carte">
+      <h3>Simulateur de prédiction <small>en production : POST /predict (JWT)</small></h3>
+      <div class="formulaire">
+        <div class="champ"><label for="contrat">Type de contrat</label><select id="contrat"><option value="mensuel">Month-to-month</option><option value="1an">One year</option><option value="2ans">Two year</option></select></div>
+        <div class="champ"><label for="tenure">Ancienneté (mois)</label><input id="tenure" type="number" min="0" max="72" value="4"></div>
+        <div class="champ"><label for="charges">Charges mensuelles (€)</label><input id="charges" type="number" min="18" max="120" value="82" step="0.5"></div>
+        <div class="champ"><label for="internet">Service internet</label><select id="internet"><option>Fiber optic</option><option>DSL</option><option value="non">Aucun</option></select></div>
+        <div class="champ"><label for="secu">Sécurité en ligne</label><select id="secu"><option value="non">Non</option><option value="oui">Oui</option></select></div>
+        <div class="champ"><label for="support">Support technique</label><select id="support"><option value="non">Non</option><option value="oui">Oui</option></select></div>
+        <div class="champ"><label for="paiement">Mode de paiement</label><select id="paiement"><option value="echeq">Electronic check</option><option>Bank transfer (auto)</option><option>Credit card (auto)</option><option>Mailed check</option></select></div>
+        <div class="champ"><label for="senior">Client senior</label><select id="senior"><option value="0">Non</option><option value="1">Oui</option></select></div>
+        <div class="champ"><label for="nbserv">Services souscrits (0–6)</label><input id="nbserv" type="number" min="0" max="6" value="1"></div>
+        <button class="bouton" onclick="predire()">Calculer le risque</button>
+      </div>
+    </div>
+    <div class="carte resultat">
+      <div class="jauge">
+        <svg viewBox="0 0 220 120" aria-hidden="true">
+          <path d="M15 110 A95 95 0 0 1 205 110" fill="none" stroke="var(--panneau3)" stroke-width="14" stroke-linecap="round"/>
+          <path id="arcScore" d="M15 110 A95 95 0 0 1 205 110" fill="none" stroke="var(--or)" stroke-width="14" stroke-linecap="round" stroke-dasharray="298" stroke-dashoffset="298" style="transition:stroke-dashoffset .8s cubic-bezier(.2,.6,.2,1),stroke .3s"/>
+        </svg>
+        <div class="score-txt num" id="scoreTxt">—</div>
+      </div>
+      <div class="verdict" id="verdict">En attente de simulation</div>
+      <div class="reco" id="reco">Renseignez le profil client puis lancez le calcul. La jauge affiche la probabilité de résiliation estimée par le modèle.</div>
+    </div>
+  </div>
+
+  <!-- ============ PROJECTION 30 JOURS ============ -->
+  <div class="carte" style="margin-bottom:16px">
+    <div class="projection-header">
+      <h3 style="margin:0">Projection du churn <small>estimation par extrapolation du modèle sur la base actuelle</small></h3>
+      <div class="horizon-select" role="group" aria-label="Horizon de projection">
+        <button data-horizon="7">7 jours</button>
+        <button class="actif" data-horizon="30">30 jours</button>
+        <button data-horizon="60">60 jours</button>
+        <button data-horizon="90">90 jours</button>
+      </div>
+    </div>
+    <div class="zone-graph haute"><canvas id="g5_projection"></canvas></div>
+    <div class="projection-metriques" id="proj-metriques">
+      <div class="proj-m"><div class="l">Churn attendu · <span id="pm-horizon">30 j</span></div><div class="v rouge num" id="pm-churners">14 320</div><div class="s num" id="pm-tx">clients · 6,3 % de la base</div></div>
+      <div class="proj-m"><div class="l">Revenu perdu estimé</div><div class="v rouge num" id="pm-perdu">989 k€</div><div class="s">Si aucune action de rétention</div></div>
+      <div class="proj-m"><div class="l">Sauvegardable (campagne)</div><div class="v or num" id="pm-sauv">395 k€</div><div class="s num" id="pm-hyp">Hypothèse : 40 % de rétention</div></div>
+      <div class="proj-m"><div class="l">Fenêtre d'action optimale</div><div class="v vert" id="pm-fenetre">≤ 7 jours</div><div class="s">Avant escalade du risque</div></div>
+    </div>
+  </div>
+
+  <div class="l-1-1">
+    <div class="carte"><h3>Matrice de confusion <small>jeu de test — 200 000 clients</small></h3>
+      <div class="matrice">
+        <div class="coin">Réel ↓ / Prédit →</div><div class="etiq">Fidèle</div><div class="etiq">Churn</div>
+        <div class="etiq">Fidèle</div>
+        <div class="case vn"><div class="n num">87 053</div><div class="t">Vrais négatifs</div></div>
+        <div class="case fp"><div class="n num">59 755</div><div class="t">Faux positifs</div></div>
+        <div class="etiq">Churn</div>
+        <div class="case fn"><div class="n num">19 228</div><div class="t">Faux négatifs</div></div>
+        <div class="case vp"><div class="n num">33 964</div><div class="t">Vrais positifs</div></div>
+      </div>
+    </div>
+    <div class="carte"><h3>Traçabilité du modèle <small>chaîne MLOps</small></h3>
+      <div class="metriques-modele">
+        <div class="metrique"><div class="v">v1</div><div class="l">MLflow · Production</div></div>
+        <div class="metrique"><div class="v num">0,6603</div><div class="l">AUC-ROC (test)</div></div>
+        <div class="metrique"><div class="v num">0,4624</div><div class="l">F1-Score</div></div>
+        <div class="metrique"><div class="v num">0,6024</div><div class="l">Score composite</div></div>
+      </div>
+      <p style="margin-top:16px;font-size:12.5px;color:var(--texte2);line-height:1.65">
+        Régression Logistique (<span class="mono">C = 0,01 · lbfgs · L2</span>), sélectionnée parmi 4 algorithmes par score composite
+        <span class="mono" style="color:var(--or)">0,40×AUC + 0,35×Recall + 0,25×F1 − 0,50×Δ</span>.
+        Pipeline complet publié sur <b style="color:var(--or)">Hugging Face · yavin228/churn-canalplus</b> (dépôt privé),
+        chargé par Spark avec cache local de secours.
+      </p>
+    </div>
+  </div>
+</div>
+
+</main>
+
+<footer>
+  <span>Pipeline : <b>Kafka → Spark → PostgreSQL → FastAPI/Power BI</b> · latence cible &lt; 5 s</span>
+  <span>Modèle : <b>churn_model_canalplus v1</b> · MLflow <b>Production</b> · HF <b>yavin228/churn-canalplus</b> · Prototype — données simulées</span>
+</footer>
+
+<script>
+/* ==========================================================
+   Connexion API + rafraîchissement live (branchement backend)
+   ========================================================== */
+const API = 'http://127.0.0.1:8000';
+let TOKEN = null;
+let refreshTimer = null;
+
+// Enregistre l'URL affichée dans la modale (utile si tu changes d'IP)
+document.addEventListener('DOMContentLoaded', () => {
+  const el = document.getElementById('apiUrl');
+  if (el) el.textContent = API;
+});
+
+async function doLogin(){
+  const user = document.getElementById('loginUser').value.trim();
+  const pass = document.getElementById('loginPass').value;
+  const err  = document.getElementById('loginErr');
+  err.textContent = '';
+  if(!user || !pass){ err.textContent = 'Renseigne utilisateur et mot de passe.'; return; }
+  try{
+    const body = new URLSearchParams({username:user, password:pass});
+    const r = await fetch(API+'/token', {method:'POST', body});
+    if(!r.ok){
+      const j = await r.json().catch(()=>({}));
+      err.textContent = j.detail || 'Identifiants invalides';
+      return;
+    }
+    const j = await r.json();
+    TOKEN = j.access_token;
+    document.getElementById('loginOverlay').style.display = 'none';
+    await premierChargement();
+    demarrerRafraichissementAuto();
+  }catch(e){
+    err.textContent = 'Impossible de joindre l\'API. Vérifie qu\'elle tourne sur '+API;
+  }
+}
+
+async function apiGet(path){
+  const r = await fetch(API+path, {headers:{'Authorization':'Bearer '+TOKEN}});
+  if(r.status === 401){ location.reload(); return null; }
+  if(!r.ok) throw new Error(path+' → '+r.status);
+  return r.json();
+}
+
+/* ==== Cache des instances Chart.js pour les mettre à jour proprement ==== */
+const CHARTS = {};
+
+function updateChart(key, newLabels, newData, extraDatasetProps){
+  const chart = CHARTS[key];
+  if(!chart) return;
+  chart.data.labels = newLabels;
+  chart.data.datasets.forEach((ds, i) => {
+    if(Array.isArray(newData[0])){ ds.data = newData[i] || ds.data; }
+    else if(i===0){ ds.data = newData; }
+    if(extraDatasetProps && extraDatasetProps[i]){ Object.assign(ds, extraDatasetProps[i]); }
+  });
+  chart.update('none');
+}
+
+function fmtEuro(v, digits=2){ if(v==null) return '—'; return Number(v).toLocaleString('fr-FR',{minimumFractionDigits:digits,maximumFractionDigits:digits})+' €'; }
+function fmtPct(v, digits=1){ if(v==null) return '—'; return (Number(v)*100).toFixed(digits)+' %'; }
+function fmtNum(v){ if(v==null) return '—'; return Number(v).toLocaleString('fr-FR'); }
+
+/* ==== KPI cards (page 1) ==== */
+async function refreshEtatBase(){
+  try{
+    const d = await apiGet('/analytics/etat-base');
+    if(!d) return;
+    const targets = {
+      'clientsEnBase': fmtNum(d.clients_en_base),
+      'tauxChurnObs':  fmtPct(d.taux_churn_observe),
+      'nbResiliations': fmtNum(d.nb_resiliations)+' résiliations',
+      'mrrTotal':       (d.mrr_total_meur||0).toString().replace('.',',')+' M€',
+      'mrrMoyen':       'Charge moyenne : '+fmtEuro(d.mrr_moyen)+' / client',
+      'ancMoy':         (d.anciennete_moyenne||0).toString().replace('.',','),
+      'ancMed':         'Médiane : '+(d.anciennete_mediane||0).toString().replace('.',',')+' mois',
+    };
+    for(const [id,val] of Object.entries(targets)){
+      const el = document.getElementById(id);
+      if(el) el.textContent = val;
+    }
+  }catch(e){ console.warn('etat-base:', e); }
+}
+
+/* ==== Graphiques page 1 (churn descriptif) ==== */
+async function refreshPage1(){
+  try{
+    const [contrat, tenure] = await Promise.all([
+      apiGet('/analytics/churn-par-contrat'),
+      apiGet('/analytics/churn-par-tenure'),
+    ]);
+    if(contrat){
+      const labels = contrat.map(r=>r.contract);
+      const taux   = contrat.map(r=>+(r.taux_churn*100).toFixed(1));
+      const nb     = contrat.map(r=>+r.nb_clients);
+      updateChart('g1_contrat', labels, taux);
+      updateChart('g1_repcontrat', labels, nb);
+    }
+    if(tenure){
+      const labels = tenure.map(r=>`${r.borne_basse}-${r.borne_haute} mois`);
+      const taux   = tenure.map(r=>+(r.taux_churn*100).toFixed(1));
+      updateChart('g1_tenure', labels, taux);
+    }
+  }catch(e){ console.warn('page1:', e); }
+}
+
+/* ==== Graphiques page 2 (services) ==== */
+async function refreshPage2(){
+  try{
+    const services = await apiGet('/analytics/churn-par-services');
+    if(services){
+      const labels = services.map(r=>r.nb_services+' service'+(r.nb_services>1?'s':''));
+      const taux   = services.map(r=>+(r.taux_churn*100).toFixed(1));
+      updateChart('g2_services', labels, taux);
+    }
+  }catch(e){ console.warn('page2:', e); }
+}
+
+/* ==== Page 4 : KPIs live + répartition risques ==== */
+async function refreshPage4(){
+  try{
+    const [kpis, avp] = await Promise.all([
+      apiGet('/kpis'),
+      apiGet('/analytics/actuals-vs-predictions'),
+    ]);
+    // Affiche les KPIs live si le DOM les prévoit (id kpiLive*)
+    if(kpis){
+      const map = {
+        'kpiPredictions24h': fmtNum(kpis.nb_predictions_24h),
+        'kpiClients24h':     fmtNum(kpis.nb_clients_24h),
+        'kpiScoreMoyen':     kpis.score_moyen_24h!=null? Number(kpis.score_moyen_24h).toFixed(3):'—',
+        'kpiTauxChurnPredit': fmtPct(kpis.taux_churn_predit_24h),
+        'kpiRisqueEleve':    fmtNum(kpis.nb_risque_eleve_24h),
+        'kpiMrrARisque':     fmtEuro(kpis.mrr_a_risque_24h,0),
+      };
+      for(const [id,val] of Object.entries(map)){
+        const el = document.getElementById(id); if(el) el.textContent = val;
+      }
+    }
+    // Actual vs Predicted
+    if(avp){
+      const map = {
+        'avpActual':   fmtNum(avp.actual_churns),
+        'avpPredit':   fmtNum(avp.predicted_churns),
+        'avpAccuracy': fmtPct(avp.accuracy_live),
+        'avpEvalues':  fmtNum(avp.clients_evalues),
+      };
+      for(const [id,val] of Object.entries(map)){
+        const el = document.getElementById(id); if(el) el.textContent = val;
+      }
+    }
+  }catch(e){ console.warn('page4:', e); }
+}
+
+/* ==== Ticker temps réel (dernières prédictions) ==== */
+async function refreshTicker(){
+  try{
+    const d = await apiGet('/analytics/flux-live?limite=15');
+    if(!d || !d.length) return;
+    const flux = document.querySelector('.ticker .flux');
+    if(!flux) return;
+    const items = d.map(ev => {
+      const ts = ev.event_ts ? new Date(ev.event_ts).toTimeString().slice(0,8) : '--:--:--';
+      const cid = (ev.customer_id||'').toString();
+      const cidShort = cid.length>=8 ? cid.slice(0,4)+'…'+cid.slice(-4) : cid;
+      const score = ev.churn_score!=null ? Number(ev.churn_score).toFixed(3) : '—';
+      const alerte = ev.churn_score!=null && Number(ev.churn_score) >= 0.5;
+      const scoreHtml = alerte
+        ? `scoré <span class="alerte">${score} ⚠</span>`
+        : `scoré ${score}`;
+      return `<span><span class="mono">${ts}</span> · <b>${ev.event_type||'—'}</b> · client ${cidShort} · ${scoreHtml}</span>`;
+    }).join('');
+    flux.innerHTML = items;
+  }catch(e){ console.warn('ticker:', e); }
+}
+
+/* ==== Top clients à risque (page 3 ou 4) ==== */
+async function refreshTopRisque(){
+  try{
+    const clients = await apiGet('/analytics/../clients/risque?limite=10').catch(()=>apiGet('/clients/risque?limite=10'));
+    if(!clients) return;
+    const tbody = document.querySelector('#tableTopRisque tbody');
+    if(!tbody) return;
+    tbody.innerHTML = clients.map(c => `
+      <tr>
+        <td class="mono">${c.customer_id||''}</td>
+        <td>${Number(c.churn_score).toFixed(3)}</td>
+        <td><span class="pastille ${c.niveau_risque==='ELEVE'?'eleve':(c.niveau_risque==='MOYEN'?'moyen':'faible')}">${c.niveau_risque||''}</span></td>
+        <td>${c.contract||''}</td>
+        <td>${c.tenure||0} mois</td>
+        <td>${fmtEuro(c.mrr)}</td>
+      </tr>`).join('');
+  }catch(e){ console.warn('topRisque:', e); }
+}
+
+async function premierChargement(){
+  document.querySelector('header')?.insertAdjacentHTML('beforeend',
+    `<div id="statutConnexion" style="position:absolute;top:12px;right:20px;font-size:11px;color:#4FB286;letter-spacing:.06em;text-transform:uppercase;display:flex;align-items:center;gap:6px">
+      <span style="width:8px;height:8px;background:#4FB286;border-radius:50%;box-shadow:0 0 8px #4FB286"></span>Connecté à l'API
+    </div>`);
+  await Promise.all([
+    refreshEtatBase(),
+    refreshPage1(),
+    refreshPage2(),
+    refreshPage4(),
+    refreshTicker(),
+    refreshTopRisque(),
+  ]);
+}
+
+function demarrerRafraichissementAuto(){
+  if(refreshTimer) clearInterval(refreshTimer);
+  refreshTimer = setInterval(async ()=>{
+    await refreshTicker();       // toutes les 15s : ticker
+    await refreshEtatBase();      // + KPIs cards
+    await refreshPage4();         // + KPIs live page 4
+  }, 15000);
+}
+
+/* ================= Filtres globaux ================= */
+const filtresInit = {periode:'30j',contrat:'tous',segment:'tous',risque:'tous'};
+let filtres = {...filtresInit};
+
+function appliquerFiltres(){
+  filtres = {
+    periode: document.getElementById('f-periode').value,
+    contrat: document.getElementById('f-contrat').value,
+    segment: document.getElementById('f-segment').value,
+    risque:  document.getElementById('f-risque').value,
+  };
+  const nbActifs = Object.entries(filtres).filter(([k,v])=>v!==filtresInit[k]).length;
+  const ind = document.getElementById('indic-filtres');
+  ind.classList.toggle('actif', nbActifs>0);
+  ind.textContent = nbActifs>0 ? `${nbActifs} filtre${nbActifs>1?'s':''} actif${nbActifs>1?'s':''}` : '';
+  // Dans un vrai backend : refetch des données via /kpis?periode=...&contrat=...
+  // Ici on met à jour la projection (page 5) pour matérialiser l'effet des filtres
+  majProjection();
+}
+function resetFiltres(){
+  Object.keys(filtresInit).forEach(k=>document.getElementById('f-'+k).value=filtresInit[k]);
+  appliquerFiltres();
+}
+
+/* ================= Navigation ================= */
+const graphesInit = {};
+document.querySelectorAll('nav .onglet').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    document.querySelectorAll('nav .onglet').forEach(b=>b.classList.remove('actif'));
+    btn.classList.add('actif');
+    document.querySelectorAll('.page').forEach(pg=>pg.classList.remove('visible'));
+    const id = btn.dataset.page;
+    document.getElementById(id).classList.add('visible');
+    if(!graphesInit[id]){ (initPage[id]||(()=>{}))(); graphesInit[id]=true; }
+  });
+});
+
+/* ================= Thème Chart.js ================= */
+Chart.defaults.color='#B8B8BE'; Chart.defaults.borderColor='#25252C';
+Chart.defaults.font.family='Inter'; Chart.defaults.font.size=11.5;
+const OR='#F2C14E',ROUGE='#F0553B',VERT='#4FB286',BLEU='#5B9BD5';
+const pct=v=>(v*100).toFixed(1)+' %';
+const optBarreH=(max)=>({maintainAspectRatio:false,indexAxis:'y',
+  plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>pct(c.raw)}}},
+  scales:{x:{max,ticks:{callback:v=>(v*100)+' %'},grid:{color:'#1E1E22'}},y:{grid:{display:false}}}});
+
+const initPage = {
+p1(){
+  CHARTS.g1_contrat = new Chart(g1_contrat,{type:'bar',data:{labels:['Month-to-month','One year','Two year'],
+    datasets:[{data:[.326,.221,.165],backgroundColor:[ROUGE,'rgba(242,193,78,.75)',VERT],barThickness:52,borderRadius:2}]},
+    options:optBarreH(.4)});
+  CHARTS.g1_repcontrat = new Chart(g1_repcontrat,{type:'doughnut',data:{labels:['Month-to-month','One year','Two year'],
+    datasets:[{data:[45,30,25],backgroundColor:[ROUGE,OR,VERT],borderColor:'#111114',borderWidth:4}]},
+    options:{maintainAspectRatio:false,cutout:'62%',plugins:{legend:{position:'bottom',labels:{boxWidth:10,padding:14}},
+      tooltip:{callbacks:{label:c=>c.label+' : '+c.raw+' %'}}}}});
+  CHARTS.g1_tenure = new Chart(g1_tenure,{type:'bar',data:{labels:['0–5 mois','6–12','13–24','25–48','49–72'],
+    datasets:[{data:[.370,.302,.268,.244,.221],backgroundColor:[ROUGE,'#E08A45','rgba(242,193,78,.8)','rgba(242,193,78,.55)',VERT],barThickness:42,borderRadius:2}]},
+    options:{maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>pct(c.raw)}}},
+      scales:{y:{max:.42,ticks:{callback:v=>(v*100)+' %'},grid:{color:'#1E1E22'}},x:{grid:{display:false}}}}});
+  new Chart(g1_internet,{type:'bar',data:{labels:['Fiber optic','DSL','Sans internet'],
+    datasets:[{data:[.301,.256,.208],backgroundColor:[ROUGE,'rgba(242,193,78,.75)',VERT],barThickness:42,borderRadius:2}]},
+    options:{maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>pct(c.raw)}}},
+      scales:{y:{max:.35,ticks:{callback:v=>(v*100)+' %'},grid:{color:'#1E1E22'}},x:{grid:{display:false}}}}});
+},
+p2(){
+  CHARTS.g2_services = new Chart(g2_services,{type:'bar',data:{labels:['0 service','1','2','3','4','5–6'],
+    datasets:[{data:[.334,.301,.272,.243,.208,.181],backgroundColor:[ROUGE,'#E08A45','rgba(242,193,78,.85)','rgba(242,193,78,.6)','rgba(79,178,134,.7)',VERT],barThickness:38,borderRadius:2}]},
+    options:{maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>pct(c.raw)}}},
+      scales:{y:{max:.38,ticks:{callback:v=>(v*100)+' %'},grid:{color:'#1E1E22'}},x:{grid:{display:false}}}}});
+  new Chart(g2_paiement,{type:'bar',data:{labels:['Electronic check','Mailed check','Bank transfer (auto)','Credit card (auto)'],
+    datasets:[{data:[.312,.271,.244,.239],backgroundColor:[ROUGE,'rgba(242,193,78,.8)','rgba(79,178,134,.7)',VERT],barThickness:32,borderRadius:2}]},
+    options:optBarreH(.36)});
+  new Chart(g2_charges,{type:'line',data:{labels:['18–30 €','30–45','45–60','60–75','75–90','90–105','105–120'],
+    datasets:[
+      {label:'Clients fidèles',data:[9.8,11.2,12.4,13.1,12.8,10.9,8.6],borderColor:VERT,backgroundColor:'rgba(79,178,134,.14)',fill:true,tension:.4,pointRadius:0,borderWidth:2},
+      {label:'Clients résiliés',data:[2.6,3.1,3.6,4.2,4.7,4.4,3.9],borderColor:ROUGE,backgroundColor:'rgba(240,85,59,.14)',fill:true,tension:.4,pointRadius:0,borderWidth:2}]},
+    options:{maintainAspectRatio:false,plugins:{legend:{labels:{boxWidth:10}}},
+      scales:{y:{title:{display:true,text:'% de la base'},grid:{color:'#1E1E22'}},x:{grid:{display:false}}}}});
+  new Chart(g2_demo,{type:'bar',data:{labels:['Senior','Non senior','Avec conjoint','Sans conjoint'],
+    datasets:[{data:[.297,.259,.248,.281],backgroundColor:['#E08A45','rgba(242,193,78,.7)',VERT,'rgba(240,85,59,.8)'],barThickness:28,borderRadius:2}]},
+    options:optBarreH(.34)});
+},
+p3(){
+  new Chart(g3_facteurs,{type:'bar',data:{
+    labels:['Ancienneté (tenure)','Contrat Month-to-month','Charges mensuelles','Sans support technique','Sans sécurité en ligne','Nouveau client (<6 mois)','Electronic check'],
+    datasets:[{data:[.152,.136,.084,.074,.066,.059,.055],backgroundColor:OR,barThickness:20,borderRadius:2}]},
+    options:{maintainAspectRatio:false,indexAxis:'y',plugins:{legend:{display:false}},
+      scales:{x:{grid:{color:'#1E1E22'}},y:{grid:{display:false},ticks:{font:{size:11}}}}}});
+  new Chart(g3_matrice,{type:'bubble',data:{datasets:[
+    {label:'Cibler en priorité',backgroundColor:'rgba(240,85,59,.72)',borderColor:ROUGE,borderWidth:1,
+      data:[{x:.78,y:96,r:16},{x:.72,y:88,r:13},{x:.69,y:102,r:11},{x:.75,y:79,r:10}]},
+    {label:'Campagne ciblée',backgroundColor:'rgba(242,193,78,.72)',borderColor:OR,borderWidth:1,
+      data:[{x:.58,y:64,r:15},{x:.55,y:82,r:12},{x:.62,y:49,r:10},{x:.52,y:71,r:9}]},
+    {label:'Suivi standard',backgroundColor:'rgba(79,178,134,.6)',borderColor:VERT,borderWidth:1,
+      data:[{x:.28,y:52,r:14},{x:.35,y:38,r:12},{x:.22,y:68,r:10},{x:.31,y:26,r:8}]}]},
+    options:{maintainAspectRatio:false,
+      plugins:{legend:{position:'bottom',labels:{boxWidth:10,padding:14}},
+        tooltip:{callbacks:{label:c=>`Score ${c.raw.x.toFixed(2)} · ${c.raw.y} €/mois`}}},
+      scales:{x:{min:0,max:1,title:{display:true,text:'Score de churn prédit'},grid:{color:'#1E1E22'}},
+              y:{title:{display:true,text:'Charge mensuelle (€)'},grid:{color:'#1E1E22'}}}}});
+},
+p4(){
+  const heures=[...Array(24)].map((_,i)=>String((new Date().getHours()-23+i+24)%24).padStart(2,'0')+'h');
+  const volume=[6200,5800,5100,4700,4400,4600,5900,7800,9100,9800,10200,10400,9900,9700,10100,10600,11000,10800,10400,9600,8900,8100,7400,6900];
+  const scoreMoyen=[.44,.45,.44,.46,.45,.44,.45,.46,.47,.45,.44,.45,.46,.45,.44,.45,.47,.48,.46,.45,.44,.45,.46,.45];
+  new Chart(g4_evolution,{data:{labels:heures,datasets:[
+    {type:'bar',label:'Évènements scorés',data:volume,backgroundColor:'rgba(240,85,59,.18)',borderColor:'rgba(240,85,59,.4)',borderWidth:1,yAxisID:'y'},
+    {type:'line',label:'Score moyen prédit',data:scoreMoyen,borderColor:ROUGE,borderWidth:2.5,pointRadius:0,tension:.35,yAxisID:'y2'}]},
+    options:{maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+      plugins:{legend:{labels:{boxWidth:10}}},
+      scales:{y:{title:{display:true,text:'Volume'},grid:{color:'#1E1E22'}},
+              y2:{position:'right',min:0,max:1,title:{display:true,text:'Score'},grid:{display:false}},
+              x:{grid:{display:false},ticks:{maxTicksLimit:12}}}}});
+  new Chart(g4_risques,{type:'doughnut',data:{labels:['Faible (< 0,50)','Moyen (0,50–0,69)','Élevé (≥ 0,70)'],
+    datasets:[{data:[146512,35602,18034],backgroundColor:[VERT,OR,ROUGE],borderColor:'#111114',borderWidth:4}]},
+    options:{maintainAspectRatio:false,cutout:'64%',plugins:{legend:{position:'bottom',labels:{boxWidth:10,padding:14}}}}});
+  const clients=[
+    ['5090…6586',.731,'ELEVE','Month-to-month','3 mois','96 €','Appel rétention + engagement 12 mois'],
+    ['6024…8453',.712,'ELEVE','Month-to-month','1 mois','88 €','Parcours bienvenue renforcé + appel'],
+    ['8812…4412',.702,'ELEVE','Month-to-month','2 mois','79 €','Appel rétention prioritaire sous 48 h'],
+    ['1145…7320',.688,'MOYEN','One year','8 mois','102 €','Pack sécurité en ligne offert'],
+    ['7731…4905',.671,'MOYEN','Month-to-month','6 mois','64 €','Migration paiement automatique + remise'],
+    ['3390…7218',.663,'MOYEN','Month-to-month','4 mois','71 €','Offre streaming complémentaire'],
+    ['9998…0978',.634,'MOYEN','Month-to-month','5 mois','82 €','Support technique offert 3 mois'],
+    ['2337…5537',.605,'MOYEN','Month-to-month','11 mois','58 €','Remise fidélité sur facture mensuelle'],
+  ];
+  tableRisque.innerHTML = clients.map(c=>`
+    <tr><td class="mono">${c[0]}</td>
+        <td><span class="barre-score"><i style="width:${c[1]*100}%"></i></span><b class="num">${c[1].toFixed(3)}</b></td>
+        <td><span class="badge ${c[2]==='ELEVE'?'eleve':'moyen'}">${c[2]==='ELEVE'?'Élevé':'Moyen'}</span></td>
+        <td>${c[3]}</td><td class="num">${c[4]}</td><td class="num">${c[5]}</td><td class="action">${c[6]}</td></tr>`).join('');
+},
+p5(){
+  tracerProjection(30);
+  document.querySelectorAll('.horizon-select button').forEach(b=>{
+    b.addEventListener('click',()=>{
+      document.querySelectorAll('.horizon-select button').forEach(x=>x.classList.remove('actif'));
+      b.classList.add('actif');
+      tracerProjection(+b.dataset.horizon);
+    });
+  });
+}};
+
+/* ================= Projection à horizon variable ================= */
+let chartProjection=null;
+function tracerProjection(horizonJours){
+  // Modèle simplifié : taux journalier de churn extrapolé du taux mensuel (26,8 %/30)
+  // Effet de la période (filtre global) : périodes courtes = incertitude plus large.
+  const tauxJournalier = 0.268/30;
+  const baseActive = 200148;
+  const labels=[],cumChurn=[],icBas=[],icHaut=[];
+  for(let j=1;j<=horizonJours;j++){
+    labels.push('J+'+j);
+    const c = baseActive * (1-Math.pow(1-tauxJournalier,j));
+    cumChurn.push(Math.round(c));
+    icBas.push(Math.round(c*0.88));
+    icHaut.push(Math.round(c*1.12));
+  }
+  const donnees={labels,datasets:[
+    {label:'Borne haute (IC 80 %)',data:icHaut,borderColor:'rgba(240,85,59,.3)',backgroundColor:'rgba(240,85,59,.12)',borderWidth:1,pointRadius:0,fill:'+1',tension:.3},
+    {label:'Borne basse (IC 80 %)',data:icBas,borderColor:'rgba(240,85,59,.3)',backgroundColor:'transparent',borderWidth:1,pointRadius:0,fill:false,tension:.3},
+    {label:'Churn cumulé prédit',data:cumChurn,borderColor:ROUGE,backgroundColor:'transparent',borderWidth:3,pointRadius:0,tension:.3},
+  ]};
+  const opts={maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+    plugins:{legend:{labels:{boxWidth:10,filter:i=>i.text!=='Borne basse (IC 80 %)'}},
+      tooltip:{callbacks:{label:c=>c.dataset.label+' : '+c.raw.toLocaleString('fr-FR')+' clients'}}},
+    scales:{y:{title:{display:true,text:'Clients cumulés'},grid:{color:'#1E1E22'},
+      ticks:{callback:v=>v.toLocaleString('fr-FR')}},
+      x:{grid:{display:false},ticks:{maxTicksLimit:15}}}};
+  if(chartProjection) chartProjection.destroy();
+  chartProjection = new Chart(g5_projection,{type:'line',data:donnees,options:opts});
+  majMetriquesProjection(horizonJours,cumChurn[cumChurn.length-1]);
+}
+function majMetriquesProjection(horizon,total){
+  const revMoyen=69.08;                 // €/mois/client
+  const revenuPerdu=total*revMoyen;
+  const tauxRetention=0.40;             // hypothèse de campagne
+  const sauvegardable=revenuPerdu*tauxRetention;
+  const fenetres={7:'≤ 2 jours',30:'≤ 7 jours',60:'≤ 14 jours',90:'≤ 21 jours'};
+  document.getElementById('pm-horizon').textContent=horizon+' j';
+  document.getElementById('pm-churners').textContent=total.toLocaleString('fr-FR');
+  document.getElementById('pm-tx').textContent=`clients · ${(total/200148*100).toFixed(1)} % de la base scorée`;
+  document.getElementById('pm-perdu').textContent=(revenuPerdu/1000).toFixed(0)+' k€';
+  document.getElementById('pm-sauv').textContent=(sauvegardable/1000).toFixed(0)+' k€';
+  document.getElementById('pm-fenetre').textContent=fenetres[horizon];
+}
+function majProjection(){
+  // Si l'utilisateur est sur la page 5 avec un horizon sélectionné, on rafraîchit
+  const actif = document.querySelector('.horizon-select button.actif');
+  if(actif && document.getElementById('p5').classList.contains('visible')){
+    tracerProjection(+actif.dataset.horizon);
+  }
+}
+
+/* Page 1 visible au chargement */
+initPage.p1(); graphesInit.p1=true;
+
+/* ================= Simulateur ================= */
+function predire(){
+  let z=-0.55;
+  const contrat=document.getElementById('contrat').value;
+  z += contrat==='mensuel'?0.85 : contrat==='1an'?0.15 : -0.45;
+  z += Math.max(0,(24-(+document.getElementById('tenure').value)))*0.035;
+  z += (+document.getElementById('charges').value-60)*0.006;
+  if(document.getElementById('internet').value==='Fiber optic') z+=0.18;
+  if(document.getElementById('secu').value==='non') z+=0.22;
+  if(document.getElementById('support').value==='non') z+=0.22;
+  if(document.getElementById('paiement').value==='echeq') z+=0.20;
+  if(document.getElementById('senior').value==='1') z+=0.10;
+  z -= (+document.getElementById('nbserv').value)*0.08;
+  const p=1/(1+Math.exp(-z));
+
+  const arc=document.getElementById('arcScore');
+  arc.style.strokeDashoffset=298*(1-p);
+  arc.style.stroke=p>=0.7?ROUGE:p>=0.5?OR:VERT;
+  document.getElementById('scoreTxt').textContent=(p*100).toFixed(1)+' %';
+  const v=document.getElementById('verdict');
+  const niveau=p>=0.7?['eleve','Risque élevé']:p>=0.5?['moyen','Risque moyen']:['faible','Risque faible'];
+  v.className='verdict '+niveau[0]; v.textContent=niveau[1];
+  document.getElementById('reco').innerHTML = p>=0.7
+    ? '<b>Action immédiate :</b> appel de rétention sous 48 h, offre d\'engagement 12 mois avec remise. Ce profil cumule les principaux facteurs de churn du modèle.'
+    : p>=0.5
+    ? '<b>Action ciblée :</b> proposer le support technique ou la sécurité en ligne (facteurs protecteurs), inciter au paiement automatique.'
+    : '<b>Suivi standard :</b> profil stable. Opportunité de montée en gamme (services additionnels) plutôt que de rétention.';
+}
+</script>
+</body>
+</html>
