@@ -27,103 +27,6 @@ exposition sécurisée FastAPI + Dashboard temps réel.
 │ │
 ▼ ▼
 Power BI Direct Dashboard HTML
-Query (pages, JWT)
-
-Le pipeline s'appuie sur le modèle **`yavin228/churn-canalplus`** (Régression Logistique,
-AUC 0.66, Recall 0.64) publié sur Hugging Face Hub, entraîné sur un dataset
-CANAL+ synthétique d'1 million de clients (cf. architecture de développement).
-
----
-
-## Table des matières
-
-- [Prérequis](#prérequis)
-- [Démarrage rapide](#démarrage-rapide)
-- [Structure du projet](#structure-du-projet)
-- [Utilisation](#utilisation)
-- [API](#api)
-- [Dashboard](#dashboard)
-- [Connexion Power BI](#connexion-power-bi)
-- [Décisions techniques](#décisions-techniques)
-- [Auteur](#auteur)
-
----
-
-## Prérequis
-
-- **Docker** & **Docker Compose v2**
-- **8 Go de RAM** disponibles (Kafka + Spark + PostgreSQL + API)
-- **Dataset** `CanalPlus_Churn_1M.csv` (1M lignes, 21 variables + `SignupDate`/`ChurnDate`)
-- Compte **Hugging Face** avec token d'accès au dépôt `yavin228/churn-canalplus` (privé)
-
----
-
-## Démarrage rapide
-
-```bash
-# 1) Cloner le dépôt
-git clone https://github.com/yavin228/realtime-churn-prediction.git
-cd realtime-churn-prediction
-
-# 2) Configurer les secrets
-cp .env.example .env
-nano .env    # renseigner POSTGRES_PASSWORD, HF_TOKEN, JWT_SECRET_KEY
-
-# 3) Placer le dataset (fourni séparément)
-cp /chemin/vers/CanalPlus_Churn_1M.csv data/
-
-# 4) Démarrer l'infrastructure de base
-docker compose up -d kafka postgres
-docker compose ps                      # attendre "healthy" sur les deux
-
-# 5) Créer les topics Kafka
-bash 2_ingestion_kafka/create_topics.sh
-
-# 6) Démarrer le traitement + l'API
-docker compose up -d --build spark api
-
-# 7) Lancer le producer (flux continu)
-docker compose --profile producer up -d producer
-
-# 8) Ouvrir le dashboard
-# → http://127.0.0.1:8000/dashboard/
-```
-
----
-
-## Structure du projet
-
-
-cat > README.md << 'MARKDOWN_EOF'
-# Realtime Churn Prediction — CANAL+ Group
-
-Système de prédiction du churn client en **temps réel** développé lors de mon stage
-à **CANAL+ Group Togo** (Licence Professionnelle Intelligence Artificielle & Big Data,
-ESGIS 2025-2026). Architecture end-to-end conforme au cahier des charges §4.7 :
-ingestion Kafka → traitement Spark Structured Streaming → persistance PostgreSQL →
-exposition sécurisée FastAPI + Dashboard temps réel.
-
-![Python](https://img.shields.io/badge/python-3.11-blue.svg)
-![Docker](https://img.shields.io/badge/docker-compose-blue.svg)
-![Kafka](https://img.shields.io/badge/kafka-3.7-orange.svg)
-![Spark](https://img.shields.io/badge/spark-3.5-orange.svg)
-![PostgreSQL](https://img.shields.io/badge/postgresql-16-blue.svg)
-![FastAPI](https://img.shields.io/badge/fastapi-0.115-green.svg)
-![License](https://img.shields.io/badge/license-Academic-lightgrey.svg)
-
----
-
-## Architecture
-┌──────────┐ ┌───────┐ ┌───────────────┐ ┌────────────┐ ┌───────────────┐
-│ Producer │───▶│ Kafka │───▶│ Spark │───▶│ PostgreSQL │───▶│ FastAPI + │
-│ (simulé) │ │ 3 top │ │ Streaming │ │ │ │ Dashboard │
-│ ~20 e/s │ │ KRaft │ │ + modèle HF │ │ churn_data │ │ /predict │
-└──────────┘ └───────┘ │ Trigger 10s │ │ churn_model│ │ /kpis /token │
-└───────────────┘ │ + 12 vues │ └───────────────┘
-└──────┬─────┘ │
-│ │
-▼ ▼
-Power BI Direct Dashboard HTML
 Query (5 pages, JWT)
 
 Le pipeline s'appuie sur le modèle **`yavin228/churn-canalplus`** (Régression Logistique,
@@ -336,8 +239,8 @@ PostgreSQL expose 12 vues optimisées pour Direct Query :
 
 ## Auteur
 
-**Nick** — Étudiant Licence Professionnelle IA & Big Data, ESGIS 2025-2026
-Stagiaire Data Science, CANAL+ Group Togo
+**Yavin Kokouvi MITEKOR** — Étudiant Licence Professionnelle IA & Big Data, ESGIS 2025-2026
+Analyst Marketing, CANAL+ Group
 
 - 🤗 Hugging Face : [`yavin228`](https://huggingface.co/yavin228)
 - 🐙 GitHub : [`yavin228`](https://github.com/yavin228)
@@ -348,5 +251,5 @@ Stagiaire Data Science, CANAL+ Group Togo
 ## Licence
 
 Projet académique développé dans le cadre d'un stage de Licence Professionnelle.
-Usage restreint à des fins pédagogiques et de démonstration.
+Usage restreint à des fins pédagogiques et demonstratives.
 Le modèle et le dataset restent la propriété de CANAL+ Group.
