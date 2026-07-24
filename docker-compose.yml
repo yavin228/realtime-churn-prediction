@@ -1,17 +1,15 @@
-# =====================================================================
-# Architecture de production COMPLÈTE — Prédiction du churn · CANAL+
 # CDC §4.7 : Kafka -> Spark (modèle Hugging Face) -> PostgreSQL -> API/Dashboard
 # CDC §4.8 : tout conteneurisé, health checks, redémarrage automatique
 #
 # Démarrage complet :
 #   cp .env.example .env && nano .env
-#   mkdir -p data && cp /chemin/CanalPlus_Churn_1M.csv data/
+#   mkdir -p data && cp /chemin/CanalPlus_Churn_1M_Final.csv data/
 #   docker compose up -d kafka postgres
-#   docker compose ps                                (attendre "healthy")
+#   docker compose ps                            
 #   bash 2_ingestion_kafka/create_topics.sh
 #   docker compose up -d spark api
 #   docker compose --profile producer up -d producer
-# =====================================================================
+
 
 services:
 
