@@ -1,7 +1,7 @@
-# Realtime Churn Prediction — CANAL+ Group
+# Realtime Churn Prediction - CANAL+ Group
 
 Système de prédiction du churn client en **temps réel** développé lors de mon stage
-à **CANAL+ Group Togo** (Licence Professionnelle Intelligence Artificielle & Big Data,
+à **CANAL+ Group ** (Licence Professionnelle Intelligence Artificielle & Big Data,
 ESGIS 2025-2026). Architecture end-to-end conforme au cahier des charges §4.7 :
 ingestion Kafka → traitement Spark Structured Streaming → persistance PostgreSQL →
 exposition sécurisée FastAPI + Dashboard temps réel.
@@ -27,7 +27,7 @@ exposition sécurisée FastAPI + Dashboard temps réel.
 │ │
 ▼ ▼
 Power BI Direct Dashboard HTML
-Query (5 pages, JWT)
+Query (pages, JWT)
 
 Le pipeline s'appuie sur le modèle **`yavin228/churn-canalplus`** (Régression Logistique,
 AUC 0.66, Recall 0.64) publié sur Hugging Face Hub, entraîné sur un dataset
