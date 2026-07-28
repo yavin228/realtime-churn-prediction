@@ -96,28 +96,51 @@ docker compose --profile producer up -d producer
 
 
 realtime-churn-prediction/
+
 ├── docker-compose.yml # orchestration des 5 services
+
 ├── .env.example # template des secrets
+
 ├── 2_ingestion_kafka/
+
 │ ├── create_topics.sh # création des 3 topics
+
 │ ├── producer.py # simulateur d'évènements clients
+
 │ ├── Dockerfile
+
 │ └── requirements.txt
+
 ├── 3_traitement_spark/
+
 │ ├── streaming_job.py # job Spark Structured Streaming
+
 │ ├── churn_preprocessing.py # préprocessing identique à l'entraînement
+
 │ ├── model_loader.py # chargement HF résilient (cache local)
+
 │ ├── Dockerfile
+
 │ └── requirements.txt
+
 ├── 4_stockage_postgresql/
+
 │ └── init.sql # schéma complet (2 tables + 12 vues)
+
 ├── 5_services_dashboard/api/
+
 │ ├── main.py # FastAPI (JWT + 12 routes)
+
 │ ├── auth.py # authentification bcrypt + JWT
+
 │ ├── db.py # helpers PostgreSQL
+
 │ ├── static/index.html # dashboard HTML 5 pages
+
 │ ├── Dockerfile
+
 │ └── requirements.txt
+
 └── data/ # dataset (non versionné, cf. .gitignore)
 
 ---
