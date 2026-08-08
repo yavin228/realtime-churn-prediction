@@ -1,11 +1,10 @@
-#!/usr/bin/env bash
-# =====================================================================
+
 # Création des topics Kafka — CDC §4.7 étape 7
 # Topics dédiés : abonnements, usages, paiements
 # Chaque évènement publié correspond à une ligne future dans churn_data
 # (colonne event_type). Usage (Kafka démarré) :
 #   bash 2_ingestion_kafka/create_topics.sh
-# =====================================================================
+
 set -euo pipefail
 
 BROKER_CONTAINER="churn_kafka"
