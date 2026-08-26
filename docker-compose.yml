@@ -1,20 +1,18 @@
-# CDC §4.7 : Kafka -> Spark (modèle Hugging Face) -> PostgreSQL -> API/Dashboard
-# CDC §4.8 : tout conteneurisé, health checks, redémarrage automatique
-#
+# =====================================================================
 # Démarrage complet :
 #   cp .env.example .env && nano .env
 #   mkdir -p data && cp /chemin/CanalPlus_Churn_1M_Final.csv data/
 #   docker compose up -d kafka postgres
-#   docker compose ps                            
+#   docker compose ps
 #   bash 2_ingestion_kafka/create_topics.sh
 #   docker compose up -d spark api
 #   docker compose --profile producer up -d producer
 
+services:
 
 services:
 
   # ----------------------- Ingestion temps réel ----------------------
-
   kafka:
     image: apache/kafka:3.7.0
     container_name: churn_kafka
@@ -41,23 +39,24 @@ services:
     networks: [churn_net]
     healthcheck:
       test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list || exit 1"]
-      interval: 10s
-      timeout: 5s
+      interval: 15s
+      timeout: 15s
       retries: 5
-      start_period: 15s
+      start_period: 30s
+
   # -------------------------- Persistance ----------------------------
   postgres:
     image: postgres:16
     container_name: churn_postgres
     restart: unless-stopped
     ports:
-      - "5432:5432"     # Power BI Direct Query (restreindre par pare-feu sur VPS)
+      - "5432:5432"     # Power BI Direct Query
     environment:
       POSTGRES_DB: churn_db
       POSTGRES_USER: ${POSTGRES_USER:-churn_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Definir POSTGRES_PASSWORD dans .env}
     volumes:
-      - postgres_data:/var/lib/postgresql/data     
+      - postgres_data:/var/lib/postgresql/data
       - ./4_stockage_postgresql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-churn_user} -d churn_db"]
@@ -78,13 +77,15 @@ services:
     command: ["--bootstrap", "kafka:9092", "--csv", "/data/CanalPlus_Churn_1M_Final.csv",
               "--mode", "${PRODUCER_MODE:-continuous}", "--rate", "${PRODUCER_RATE:-20}"]
     networks: [churn_net]
-    profiles: ["producer"]     # lancement à la demande : docker compose --profile producer up -d producer
+    profiles: ["producer"]     # lancement à la demande
 
   # ------------------- Traitement & scoring (Spark) -------------------
   spark:
     build: ./3_traitement_spark
     container_name: churn_spark
     restart: unless-stopped
+    ports:
+      - "4040:4040"
     depends_on:
       kafka:    { condition: service_healthy }
       postgres: { condition: service_healthy }

@@ -78,3 +78,5 @@ logs/
 # --------- MLflow (si local) ---------
 mlruns/
 mlflow.db
+*.jar
+--packages/
