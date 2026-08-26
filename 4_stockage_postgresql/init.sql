@@ -222,3 +222,52 @@ SELECT date_trunc('week', churn_date)::date AS semaine,
 FROM v_churn_data_dernier_etat
 WHERE churn='Yes' AND churn_date IS NOT NULL
 GROUP BY semaine ORDER BY semaine;
+-- ==========================================
+-- Vues analytiques pour Power BI
+-- ==========================================
+
+CREATE OR REPLACE VIEW public.v_velocite_churn AS
+SELECT 
+    contract,
+    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY tenure) AS delai_median_jours,
+    AVG(tenure) AS delai_moyen_jours,
+    COUNT(customer_id) AS nb_churners
+FROM public.v_churn_data_dernier_etat
+WHERE churn = 'Yes' OR churn = '1'
+GROUP BY contract;
+
+CREATE OR REPLACE VIEW public.v_tendance_churn_hebdo AS
+SELECT 
+    DATE_TRUNC('week', signup_date)::date AS semaine,
+    COUNT(customer_id) AS nb_churns,
+    AVG(monthly_charges) AS mrr_moyen_perdu
+FROM public.v_churn_data_dernier_etat
+WHERE churn = 'Yes' OR churn = '1'
+GROUP BY DATE_TRUNC('week', signup_date);
+
+CREATE OR REPLACE VIEW public.v_cohortes_retention AS
+WITH cohorte_taille AS (
+    SELECT 
+        TO_CHAR(signup_date, 'YYYY-MM') AS mois_cohorte,
+        COUNT(customer_id) AS taille_cohorte
+    FROM public.v_churn_data_dernier_etat
+    GROUP BY TO_CHAR(signup_date, 'YYYY-MM')
+),
+cohorte_churn AS (
+    SELECT 
+        TO_CHAR(signup_date, 'YYYY-MM') AS mois_cohorte,
+        COUNT(customer_id) AS churners,
+        AVG(tenure) AS duree_moy_avant_churn_jours
+    FROM public.v_churn_data_dernier_etat
+    WHERE churn = 'Yes' OR churn = '1'
+    GROUP BY TO_CHAR(signup_date, 'YYYY-MM')
+)
+SELECT 
+    t.mois_cohorte,
+    t.taille_cohorte,
+    COALESCE(c.churners, 0) AS churners,
+    COALESCE(c.duree_moy_avant_churn_jours, 0) AS duree_moy_avant_churn_jours,
+    CASE WHEN t.taille_cohorte > 0 THEN ROUND((COALESCE(c.churners, 0)::numeric / t.taille_cohorte) * 100, 2) ELSE 0 END AS taux_churn_cohorte,
+    CASE WHEN t.taille_cohorte > 0 THEN ROUND(((t.taille_cohorte - COALESCE(c.churners, 0))::numeric / t.taille_cohorte) * 100, 2) ELSE 100 END AS "Taux_Retention"
+FROM cohorte_taille t
+LEFT JOIN cohorte_churn c ON t.mois_cohorte = c.mois_cohorte;
