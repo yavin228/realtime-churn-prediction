@@ -10,8 +10,6 @@
 
 services:
 
-services:
-
   # ----------------------- Ingestion temps réel ----------------------
   kafka:
     image: apache/kafka:3.7.0
